@@ -1,59 +1,124 @@
-const LOCAL_KEY = 'fluxo-db-preview'
-export const isLocalPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+import { supabase } from './supabaseClient'
 
-const saveLocal = data => {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify(data))
-  return data
+const number = val => Number(val || 0)
+const dateOnly = val => val ? String(val).slice(0, 10) : ''
+
+export async function fetchFinanceData() {
+  const [transRes, debtRes, payRes] = await Promise.all([
+    supabase.from('transactions').select('*').is('deleted_at', null).order('transaction_date', { ascending: false }),
+    supabase.from('debts').select('*').order('created_at', { ascending: false }),
+    supabase.from('debt_payments').select('*').order('payment_date', { ascending: false })
+  ])
+
+  if (transRes.error) console.error('Erro transações:', transRes.error.message)
+  if (debtRes.error) console.error('Erro dívidas:', debtRes.error.message)
+
+  const payments = (payRes.data || []).map(p => ({
+    id: number(p.id),
+    debtId: number(p.debt_id),
+    installmentsPaid: number(p.installments_paid),
+    amountPaid: number(p.amount_paid),
+    previousValue: number(p.previous_installment_value),
+    nextValue: number(p.next_installment_value),
+    date: dateOnly(p.payment_date),
+    note: p.note || ''
+  }))
+
+  const transactions = (transRes.data || []).map(t => ({
+    id: number(t.id),
+    type: t.type,
+    description: t.description,
+    category: t.category,
+    amount: number(t.amount),
+    date: dateOnly(t.transaction_date)
+  }))
+
+  const debts = (debtRes.data || []).map(d => ({
+    id: number(d.id),
+    name: d.name,
+    creditor: d.creditor || '',
+    total: number(d.total_amount),
+    installments: number(d.installment_count),
+    paid: number(d.paid_installments),
+    monthly: number(d.current_installment_value),
+    dueDay: number(d.due_day),
+    payments: payments.filter(p => p.debtId === number(d.id))
+  }))
+
+  return { transactions, debts, recurringBills: [] }
 }
 
-export async function loadData(seed) {
-  if (isLocalPreview) {
-    try {
-      const saved = JSON.parse(localStorage.getItem(LOCAL_KEY))
-      return saved ? { ...seed, ...saved, recurringBills: saved.recurringBills || seed.recurringBills || [] } : saveLocal(seed)
-    }
-    catch { return saveLocal(seed) }
-  }
-  const response = await fetch('/api/data')
-  if (!response.ok) throw new Error('Banco indisponível')
-  return response.json()
+export async function createTransaction(payload) {
+  const { error } = await supabase.from('transactions').insert([{
+    type: payload.type,
+    description: payload.description.trim(),
+    category: payload.category || 'Geral',
+    amount: number(payload.amount),
+    transaction_date: payload.date || new Date().toISOString().slice(0, 10)
+  }])
+  if (error) throw new Error(error.message)
+  return fetchFinanceData()
 }
 
-export async function mutateData(action, payload, current) {
-  if (!isLocalPreview) {
-    const response = await fetch('/api/data', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, payload }),
-    })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Operação não concluída')
-    return data
-  }
+export async function deleteTransaction(id) {
+  const { error } = await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', number(id))
+  if (error) throw new Error(error.message)
+  return fetchFinanceData()
+}
 
-  const data = structuredClone(current)
-  if (action === 'transaction.create') data.transactions.unshift(payload)
-  if (action === 'transaction.delete') data.transactions = data.transactions.map(t => t.id === payload.id ? { ...t, deletedAt: new Date().toISOString() } : t)
-  if (action === 'transaction.restore') data.transactions = data.transactions.map(t => t.id === payload.id ? { ...t, deletedAt: null } : t)
-  if (action === 'debt.create') data.debts.unshift({ ...payload, payments: [] })
-  if (action === 'debt.update') data.debts = data.debts.map(d => d.id === payload.id ? { ...d, ...payload } : d)
-  if (action === 'debt.delete') data.debts = data.debts.filter(d => d.id !== payload.id)
-  if (action === 'debt.pay') data.debts = data.debts.map(d => {
-    if (d.id !== payload.id) return d
-    const count = Math.min(payload.installmentsPaid, d.installments - d.paid)
-    const payment = { id: Date.now(), debtId: d.id, installmentsPaid: count, amountPaid: payload.amountPaid, previousValue: d.monthly, nextValue: payload.nextValue, date: payload.date, note: payload.note }
-    return { ...d, paid: d.paid + count, monthly: payload.nextValue, payments: [payment, ...(d.payments || [])] }
-  })
-  if (action === 'bill.create') data.recurringBills.unshift({ ...payload, payments: [] })
-  if (action === 'bill.update') data.recurringBills = data.recurringBills.map(b => b.id === payload.id ? { ...b, ...payload } : b)
-  if (action === 'bill.delete') data.recurringBills = data.recurringBills.filter(b => b.id !== payload.id)
-  if (action === 'bill.pay') {
-    const bill = data.recurringBills.find(b => b.id === payload.id)
-    const alreadyPaid = bill?.payments?.some(p => p.month === payload.month)
-    if (bill && !alreadyPaid) {
-      const transactionId = Date.now()
-      data.transactions.unshift({ id: transactionId, type: 'expense', description: bill.name, category: bill.category, amount: bill.amount, date: payload.date })
-      data.recurringBills = data.recurringBills.map(b => b.id === payload.id ? { ...b, payments: [{ id: transactionId + 1, billId: b.id, transactionId, month: payload.month, paidAt: new Date().toISOString() }, ...(b.payments || [])] } : b)
-    }
-  }
-  return saveLocal(data)
+export async function createDebt(payload) {
+  const total = number(payload.total)
+  const installments = number(payload.installments)
+  const monthly = number(payload.monthly || (total / installments))
+  
+  const { error } = await supabase.from('debts').insert([{
+    name: payload.name.trim(),
+    creditor: payload.creditor?.trim() || '',
+    total_amount: total,
+    installment_count: installments,
+    paid_installments: Math.min(number(payload.paid) || 0, installments),
+    current_installment_value: monthly,
+    due_day: number(payload.dueDay || 1)
+  }])
+  if (error) throw new Error(error.message)
+  return fetchFinanceData()
+}
+
+export async function payDebt(payload) {
+  // Buscar dívida atual
+  const { data: debtRows, error: errFetch } = await supabase.from('debts').select('*').eq('id', number(payload.id)).single()
+  if (errFetch || !debtRows) throw new Error('Dívida não encontrada')
+
+  const remaining = number(debtRows.installment_count) - number(debtRows.paid_installments)
+  const count = Math.min(number(payload.installmentsPaid || 1), remaining)
+  const newPaid = Math.min(number(debtRows.installment_count), number(debtRows.paid_installments) + count)
+  const nextVal = number(payload.nextValue)
+
+  // Atualizar dívida
+  const { error: errUpdate } = await supabase.from('debts').update({
+    paid_installments: newPaid,
+    current_installment_value: nextVal,
+    updated_at: new Date().toISOString()
+  }).eq('id', number(payload.id))
+  if (errUpdate) throw new Error(errUpdate.message)
+
+  // Registrar pagamento
+  const { error: errPay } = await supabase.from('debt_payments').insert([{
+    debt_id: number(payload.id),
+    installments_paid: count,
+    amount_paid: number(payload.amountPaid),
+    previous_installment_value: number(debtRows.current_installment_value),
+    next_installment_value: nextVal,
+    payment_date: payload.date || new Date().toISOString().slice(0, 10),
+    note: payload.note?.trim() || ''
+  }])
+  if (errPay) throw new Error(errPay.message)
+
+  return fetchFinanceData()
+}
+
+export async function deleteDebt(id) {
+  const { error } = await supabase.from('debts').delete().eq('id', number(id))
+  if (error) throw new Error(error.message)
+  return fetchFinanceData()
 }
