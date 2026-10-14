@@ -6,9 +6,11 @@ import {
   Pencil, History, Database, LoaderCircle, AlertCircle,
 } from 'lucide-react'
 import { isLocalPreview, loadData, mutateData } from './dataService'
+import MonthlyBills, { BillForm } from './MonthlyBills'
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
-const today = new Date().toISOString().slice(0, 10)
+const clock = new Date()
+const today = `${clock.getFullYear()}-${String(clock.getMonth()+1).padStart(2,'0')}-${String(clock.getDate()).padStart(2,'0')}`
 const monthKey = today.slice(0, 7)
 const formatDate = value => new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR')
 
@@ -22,6 +24,11 @@ const seedTransactions = [
 const seedDebts = [
   { id: 101, name: 'Notebook', creditor: 'Cartão principal', total: 4800, installments: 12, paid: 5, monthly: 400, dueDay: 18 },
   { id: 102, name: 'Empréstimo pessoal', creditor: 'Banco', total: 6000, installments: 10, paid: 7, monthly: 600, dueDay: 25 },
+]
+const seedBills = [
+  { id: 201, name: 'Aluguel', category: 'Moradia', amount: 1650, dueDay: 8, payments: [] },
+  { id: 202, name: 'Internet', category: 'Contas', amount: 119.9, dueDay: 12, payments: [] },
+  { id: 203, name: 'Energia elétrica', category: 'Contas', amount: 238.4, dueDay: 20, payments: [] },
 ]
 
 function useStoredState(key, initial) {
@@ -211,7 +218,7 @@ function PaymentForm({ debt, onSave, onClose }) {
 }
 
 export default function App() {
-  const [data,setData]=useState({transactions:[],debts:[]})
+  const [data,setData]=useState({transactions:[],debts:[],recurringBills:[]})
   const [theme,setTheme]=useStoredState('fluxo-theme','light')
   const [page,setPage]=useState('dashboard')
   const [modal,setModal]=useState(null)
@@ -219,9 +226,9 @@ export default function App() {
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
   useEffect(()=>{document.documentElement.classList.toggle('dark',theme==='dark')},[theme])
-  useEffect(()=>{loadData({transactions:seedTransactions,debts:seedDebts.map(d=>({...d,payments:[]}))}).then(setData).catch(()=>setError('Não foi possível conectar ao banco de dados.')).finally(()=>setLoading(false))},[])
+  useEffect(()=>{loadData({transactions:seedTransactions,debts:seedDebts.map(d=>({...d,payments:[]})),recurringBills:seedBills}).then(setData).catch(()=>setError('Não foi possível conectar ao banco de dados.')).finally(()=>setLoading(false))},[])
 
-  const {transactions,debts}=data
+  const {transactions,debts,recurringBills=[]}=data
   const act=async(action,payload)=>{
     setError('')
     try { setData(await mutateData(action,payload,data)) }
@@ -261,13 +268,15 @@ export default function App() {
           {error&&<div className="mb-5 flex items-center gap-2 rounded-2xl bg-[#ffd8cd] p-4 text-sm font-bold text-[#7d2c1c]"><AlertCircle size={18}/> {error}</div>}
           {page==='dashboard'&&<Dashboard transactions={transactions} debts={debts} totals={totals} openTransaction={()=>setModal('transaction')} openDebt={()=>setModal('debt')}/>} 
           {page==='transactions'&&<Transactions transactions={transactions} onDelete={id=>act('transaction.delete',{id})} onRestore={id=>act('transaction.restore',{id})} onAdd={()=>setModal('transaction')}/>} 
-          {page==='debts'&&<Debts debts={debts} onPay={debt=>setModal({type:'payment',debt})} onEdit={debt=>setModal({type:'editDebt',debt})} onAdd={()=>setModal('debt')} onDelete={id=>act('debt.delete',{id})}/>} 
+          {page==='debts'&&<div className="space-y-8"><Debts debts={debts} onPay={debt=>setModal({type:'payment',debt})} onEdit={debt=>setModal({type:'editDebt',debt})} onAdd={()=>setModal('debt')} onDelete={id=>act('debt.delete',{id})}/><MonthlyBills bills={recurringBills} onAdd={()=>setModal('bill')} onEdit={bill=>setModal({type:'editBill',bill})} onDelete={id=>act('bill.delete',{id})} onPay={payload=>act('bill.pay',payload)}/></div>} 
         </div>
       </main>
       {modal==='transaction'&&<Modal title="Nova transação" subtitle="Registre uma entrada ou saída." onClose={()=>setModal(null)}><TransactionForm onSave={saveTransaction} onClose={()=>setModal(null)}/></Modal>}
       {modal==='debt'&&<Modal title="Nova dívida" subtitle="Cadastre o parcelamento e acompanhe o progresso." onClose={()=>setModal(null)}><DebtForm onSave={saveDebt} onClose={()=>setModal(null)}/></Modal>}
       {modal?.type==='editDebt'&&<Modal title="Editar dívida" subtitle="Todos os dados podem ser corrigidos." onClose={()=>setModal(null)}><DebtForm initial={modal.debt} onSave={d=>act('debt.update',d)} onClose={()=>setModal(null)}/></Modal>}
       {modal?.type==='payment'&&<Modal title="Registrar pagamento" subtitle="Quite uma ou várias parcelas de uma vez." onClose={()=>setModal(null)}><PaymentForm debt={modal.debt} onSave={p=>act('debt.pay',p)} onClose={()=>setModal(null)}/></Modal>}
+      {modal==='bill'&&<Modal title="Nova conta mensal" subtitle="Ela aparecerá automaticamente todos os meses." onClose={()=>setModal(null)}><BillForm onSave={bill=>act('bill.create',bill)} onClose={()=>setModal(null)}/></Modal>}
+      {modal?.type==='editBill'&&<Modal title="Editar conta mensal" subtitle="As alterações valerão para os próximos pagamentos." onClose={()=>setModal(null)}><BillForm initial={modal.bill} onSave={bill=>act('bill.update',bill)} onClose={()=>setModal(null)}/></Modal>}
     </div>
   </div>
 }

@@ -8,7 +8,10 @@ const saveLocal = data => {
 
 export async function loadData(seed) {
   if (isLocalPreview) {
-    try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || saveLocal(seed) }
+    try {
+      const saved = JSON.parse(localStorage.getItem(LOCAL_KEY))
+      return saved ? { ...seed, ...saved, recurringBills: saved.recurringBills || seed.recurringBills || [] } : saveLocal(seed)
+    }
     catch { return saveLocal(seed) }
   }
   const response = await fetch('/api/data')
@@ -40,5 +43,17 @@ export async function mutateData(action, payload, current) {
     const payment = { id: Date.now(), debtId: d.id, installmentsPaid: count, amountPaid: payload.amountPaid, previousValue: d.monthly, nextValue: payload.nextValue, date: payload.date, note: payload.note }
     return { ...d, paid: d.paid + count, monthly: payload.nextValue, payments: [payment, ...(d.payments || [])] }
   })
+  if (action === 'bill.create') data.recurringBills.unshift({ ...payload, payments: [] })
+  if (action === 'bill.update') data.recurringBills = data.recurringBills.map(b => b.id === payload.id ? { ...b, ...payload } : b)
+  if (action === 'bill.delete') data.recurringBills = data.recurringBills.filter(b => b.id !== payload.id)
+  if (action === 'bill.pay') {
+    const bill = data.recurringBills.find(b => b.id === payload.id)
+    const alreadyPaid = bill?.payments?.some(p => p.month === payload.month)
+    if (bill && !alreadyPaid) {
+      const transactionId = Date.now()
+      data.transactions.unshift({ id: transactionId, type: 'expense', description: bill.name, category: bill.category, amount: bill.amount, date: payload.date })
+      data.recurringBills = data.recurringBills.map(b => b.id === payload.id ? { ...b, payments: [{ id: transactionId + 1, billId: b.id, transactionId, month: payload.month, paidAt: new Date().toISOString() }, ...(b.payments || [])] } : b)
+    }
+  }
   return saveLocal(data)
 }

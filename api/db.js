@@ -22,6 +22,7 @@ export async function ensureSchema(sql) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `
+  await sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS source_key TEXT UNIQUE`
   await sql`
     CREATE TABLE IF NOT EXISTS debts (
       id BIGSERIAL PRIMARY KEY,
@@ -48,6 +49,28 @@ export async function ensureSchema(sql) {
       payment_date DATE NOT NULL,
       note TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS recurring_bills (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT 'owner',
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+      due_day INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 31),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+  await sql`
+    CREATE TABLE IF NOT EXISTS recurring_bill_payments (
+      id BIGSERIAL PRIMARY KEY,
+      bill_id BIGINT NOT NULL REFERENCES recurring_bills(id) ON DELETE CASCADE,
+      transaction_id BIGINT REFERENCES transactions(id) ON DELETE SET NULL,
+      reference_month TEXT NOT NULL,
+      paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (bill_id, reference_month)
     )
   `
   initialized = true

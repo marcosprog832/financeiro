@@ -10,6 +10,10 @@ Aplicação React para controlar receitas, despesas, dívidas e pagamentos de pa
 - Pagamento de uma ou várias parcelas de uma vez
 - Edição do valor pago e do valor da próxima parcela
 - Histórico de pagamentos
+- Checklist mensal de contas recorrentes
+- Status automático: pendente, atrasada ou paga
+- Criação automática da despesa ao marcar uma conta como paga
+- Edição e exclusão de contas mensais
 - Persistência no Neon PostgreSQL
 - Tema claro e escuro
 
