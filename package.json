@@ -3,21 +3,21 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
- "scripts": {
+  "scripts": {
     "dev": "vite",
     "build": "npx vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@neondatabase/serverless": "latest",
-    "@vitejs/plugin-react": "latest",
+    "@supabase/supabase-js": "^2.117.3",
     "@tailwindcss/postcss": "latest",
+    "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
     "postcss": "latest",
     "react": "latest",
     "react-dom": "latest",
     "tailwindcss": "latest",
     "vite": "latest"
-  },
-  "devDependencies": {}
+  }
 }

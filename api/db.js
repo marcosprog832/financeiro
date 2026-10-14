@@ -1,77 +1,10 @@
-import { neon } from '@neondatabase/serverless'
+import { createClient } from '@supabase/supabase-js'
 
-let initialized = false
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export function database() {
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL não configurada')
-  return neon(process.env.DATABASE_URL)
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('As variáveis de ambiente do Supabase não foram configuradas corretamente.')
 }
 
-export async function ensureSchema(sql) {
-  if (initialized) return
-  await sql`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL DEFAULT 'owner',
-      type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
-      description TEXT NOT NULL,
-      category TEXT NOT NULL,
-      amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
-      transaction_date DATE NOT NULL,
-      deleted_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `
-  await sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS source_key TEXT UNIQUE`
-  await sql`
-    CREATE TABLE IF NOT EXISTS debts (
-      id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL DEFAULT 'owner',
-      name TEXT NOT NULL,
-      creditor TEXT NOT NULL DEFAULT '',
-      total_amount NUMERIC(14,2) NOT NULL CHECK (total_amount > 0),
-      installment_count INTEGER NOT NULL CHECK (installment_count > 0),
-      paid_installments INTEGER NOT NULL DEFAULT 0 CHECK (paid_installments >= 0),
-      current_installment_value NUMERIC(14,2) NOT NULL CHECK (current_installment_value >= 0),
-      due_day INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 31),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `
-  await sql`
-    CREATE TABLE IF NOT EXISTS debt_payments (
-      id BIGSERIAL PRIMARY KEY,
-      debt_id BIGINT NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
-      installments_paid INTEGER NOT NULL CHECK (installments_paid > 0),
-      amount_paid NUMERIC(14,2) NOT NULL CHECK (amount_paid > 0),
-      previous_installment_value NUMERIC(14,2) NOT NULL,
-      next_installment_value NUMERIC(14,2) NOT NULL,
-      payment_date DATE NOT NULL,
-      note TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `
-  await sql`
-    CREATE TABLE IF NOT EXISTS recurring_bills (
-      id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL DEFAULT 'owner',
-      name TEXT NOT NULL,
-      category TEXT NOT NULL,
-      amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
-      due_day INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 31),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `
-  await sql`
-    CREATE TABLE IF NOT EXISTS recurring_bill_payments (
-      id BIGSERIAL PRIMARY KEY,
-      bill_id BIGINT NOT NULL REFERENCES recurring_bills(id) ON DELETE CASCADE,
-      transaction_id BIGINT REFERENCES transactions(id) ON DELETE SET NULL,
-      reference_month TEXT NOT NULL,
-      paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (bill_id, reference_month)
-    )
-  `
-  initialized = true
-}
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
