@@ -112,7 +112,7 @@ function Dashboard({ transactions, debts, totals, openTransaction, openDebt }) {
         <div className="mb-6"><h2 className="display text-lg font-bold">Gastos por categoria</h2><p className="subtle text-xs">No mês atual</p></div>
         {cats.length ? <div className="space-y-5">{cats.slice(0,5).map(([name, value], i) => <div key={name}>
           <div className="mb-2 flex justify-between gap-3 text-xs"><span className="font-semibold">{name}</span><span className="subtle">{money.format(value)}</span></div>
-          <div className="progress-track"><div className="progress-fill" style={{width: `${value / maxCat * 100}%`, background: i === 0 ? '#ff8b6b' : undefined}}/></div>
+          <div className="progress-track"><div className="progress-fill" style={{width: `${(value / maxCat) * 100}%`, background: i === 0 ? '#ff8b6b' : undefined}}/></div>
         </div>)}</div> : <EmptyState icon={PiggyBank} title="Tudo tranquilo" text="Nenhuma despesa neste mês."/>}
       </div>
     </section>
@@ -256,14 +256,13 @@ export default function App() {
       <aside className={`fixed inset-y-0 left-0 z-40 flex w-[270px] flex-col bg-[#111d2f] p-6 text-white transition-transform lg:translate-x-0 ${mobile?'translate-x-0':'-translate-x-full'}`}>
         <div className="mb-10 flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#b9e65f] text-[#111d2f]"><CircleDollarSign size={23}/></span><div><p className="display text-xl font-bold leading-none">fluxo.</p><p className="mt-1 text-[10px] uppercase tracking-[.18em] text-slate-400">finanças pessoais</p></div></div>
         <nav className="space-y-2">{navigation.map(([id,label,Icon])=><button key={id} onClick={()=>go(id)} className={`nav-item flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold text-slate-300 ${page===id?'nav-active':''}`}><Icon size={18}/>{label}</button>)}</nav>
-        <div className="mt-auto rounded-[22px] border border-white/10 bg-white/[.04] p-4"><p className="mb-1 flex items-center gap-2 text-xs font-bold text-[#b9e65f]"><Database size={14}/>{isLocalPreview?'Prévia local':'Banco Neon conectado'}</p><p className="text-[11px] leading-relaxed text-slate-400">{isLocalPreview?'Na Vercel, os dados serão sincronizados com o PostgreSQL.':'Alterações salvas no banco de dados.'}</p></div>
+        <div className="mt-auto rounded-[22px] border border-white/10 bg-white/[.04] p-4"><p className="mb-1 flex items-center gap-2 text-xs font-bold text-[#b9e65f]"><Database size={14}/>{isLocalPreview?'Prévia local':'Supabase conectado'}</p><p className="text-[11px] leading-relaxed text-slate-400">Alterações salvas na nuvem.</p></div>
         <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4"><div><p className="text-sm font-bold">Minha conta</p><p className="text-[11px] text-slate-400">Controle pessoal</p></div><button onClick={()=>setTheme(t=>t==='dark'?'light':'dark')} className="grid h-10 w-10 place-items-center rounded-xl bg-white/10" aria-label="Alternar tema">{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button></div>
       </aside>
 
       <main className="min-w-0 flex-1 lg:ml-[270px]">
         <div className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-black/5 bg-[#f3f0e8]/80 px-4 backdrop-blur-xl dark:border-white/5 dark:bg-[#0d1522]/80 lg:hidden"><button className="btn-ghost p-2" onClick={()=>setMobile(true)}><Menu size={20}/></button><span className="display font-bold">fluxo.</span><button onClick={()=>setTheme(t=>t==='dark'?'light':'dark')} className="btn-ghost p-2">{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button></div>
         <div className="mx-auto max-w-[1440px] p-4 pb-16 sm:p-6 md:p-8 xl:p-12">
-          {!isLocalPreview&&<div className="mb-5 flex items-center gap-2 rounded-2xl border border-amber-400/40 bg-amber-100 p-4 text-sm font-bold text-amber-900"><AlertCircle size={18}/> Acesso ainda sem login. Não cadastre dados reais até ativarmos a autenticação.</div>}
           {loading&&<div className="mb-5 flex items-center gap-2 rounded-2xl bg-[#d9e7ff] p-4 text-sm font-bold text-[#19365e]"><LoaderCircle className="animate-spin" size={18}/> Carregando seus dados...</div>}
           {error&&<div className="mb-5 flex items-center gap-2 rounded-2xl bg-[#ffd8cd] p-4 text-sm font-bold text-[#7d2c1c]"><AlertCircle size={18}/> {error}</div>}
           {page==='dashboard'&&<Dashboard transactions={transactions} debts={debts} totals={totals} openTransaction={()=>setModal('transaction')} openDebt={()=>setModal('debt')}/>} 
@@ -276,7 +275,6 @@ export default function App() {
       {modal?.type==='editDebt'&&<Modal title="Editar dívida" subtitle="Todos os dados podem ser corrigidos." onClose={()=>setModal(null)}><DebtForm initial={modal.debt} onSave={d=>act('debt.update',d)} onClose={()=>setModal(null)}/></Modal>}
       {modal?.type==='payment'&&<Modal title="Registrar pagamento" subtitle="Quite uma ou várias parcelas de uma vez." onClose={()=>setModal(null)}><PaymentForm debt={modal.debt} onSave={p=>act('debt.pay',p)} onClose={()=>setModal(null)}/></Modal>}
       {modal==='bill'&&<Modal title="Nova conta mensal" subtitle="Ela aparecerá automaticamente todos os meses." onClose={()=>setModal(null)}><BillForm onSave={bill=>act('bill.create',bill)} onClose={()=>setModal(null)}/></Modal>}
-      {modal?.type==='editBill'&&<Modal title="Editar conta mensal" subtitle="As alterações valerão para os próximos pagamentos." onClose={()=>setModal(null)}><BillForm initial={modal.bill} onSave={bill=>act('bill.update',bill)} onClose={()=>setModal(null)}/></Modal>}
     </div>
   </div>
 }
